@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YamkSpeed (نبض) — مقياس سرعة الإنترنت الصادق | Honest Speed Test</title>
+    <meta
+      name="description"
+      content="YamkSpeed is an ad-free, bilingual internet speed test web app running 100% client-side with zero tracking and honest real-time metrics."
+    />
+    <meta name="theme-color" content="#070B14" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="YamkSpeed (نبض) — مقياس سرعة الإنترنت" />
+    <meta
+      property="og:description"
+      content="فحص دقيق، سريع، وخالٍ من الإعلانات لسرعة التحميل والرفع وزمن الاستجابة."
+    />
+    <meta property="og:site_name" content="YamkSpeed" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="YamkSpeed (نبض) — Speed Test" />
+    <meta
+      name="twitter:description"
+      content="Honest, ad-free internet speed test powered by client-side streaming."
+    />
+
+    <!-- Zero-Flash Bootstrap Script (P1-22) -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('nabd:prefs:v1');
+          var theme = 'dark';
+          var lang = 'ar';
+          if (raw) {
+            var prefs = JSON.parse(raw);
+            if (prefs.theme) theme = prefs.theme;
+            if (prefs.lang) lang = prefs.lang;
+          } else {
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+              theme = 'light';
+            }
+            var bLang = (navigator.language || '').toLowerCase();
+            if (bLang.indexOf('ar') === -1) {
+              lang = 'en';
+            }
+          }
+          var root = document.documentElement;
+          root.setAttribute('data-theme', theme);
+          root.setAttribute('lang', lang);
+          root.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) {
+            meta.setAttribute('content', theme === 'dark' ? '#070B14' : '#F6F3EC');
+          }
+        } catch (e) {
+          // Fallback gracefully
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

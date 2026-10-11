@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@import "@fontsource/space-grotesk/latin.css";
+@import "@fontsource/ibm-plex-sans-arabic/arabic.css";
+
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-accent-down: var(--accent-down);
+  --color-accent-up: var(--accent-up);
+  --color-accent-lat: var(--accent-lat);
+  --color-danger: var(--danger);
+  --color-border: var(--border);
+
+  --font-sans: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --font-arabic: "IBM Plex Sans Arabic", "Space Grotesk", system-ui, sans-serif;
+}
+
+/* Default Dark Theme ("Midnight") */
+:root {
+  --bg: #070B14;
+  --surface: #0E1626;
+  --surface-2: #16213A;
+  --text: #E8EEF9;
+  --text-muted: #93A1BD;
+  --accent-down: #22E6C3;
+  --accent-up: #8B6CFF;
+  --accent-lat: #FFB547;
+  --danger: #FF6B7A;
+  --border: rgba(255, 255, 255, 0.08);
+  --aurora-hue: 168deg;
+
+  font-family: var(--font-sans);
+  color-scheme: dark;
+}
+
+/* Light Theme ("Sand") */
+[data-theme="light"] {
+  --bg: #F6F3EC;
+  --surface: #FFFFFF;
+  --surface-2: #EEE9DD;
+  --text: #0B1220;
+  --text-muted: #4B5568;
+  --accent-down: #0A8F7A;
+  --accent-up: #5B3FE0;
+  --accent-lat: #B86E00;
+  --danger: #C62839;
+  --border: rgba(11, 18, 32, 0.10);
+  --aurora-hue: 168deg;
+
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  transition: background-color 0.25s ease, color 0.25s ease;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Arabic Typography adjustments */
+:lang(ar) {
+  font-family: var(--font-arabic);
+  line-height: 1.7;
+  letter-spacing: normal !important;
+}
+
+/* Tabular Numerals for live counters and gauges */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Strict BiDi isolation for network metrics, IP addresses, domains, and latencies */
+.bidi-isolate {
+  unicode-bidi: isolate;
+  direction: ltr;
+  display: inline-block;
+}
+
+/* Glassmorphism surface */
+.glass-surface {
+  background-color: var(--surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

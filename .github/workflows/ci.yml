@@ -1,0 +1,37 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check Token Contrast (WCAG 2.1 AA)
+        run: npm run check-tokens
+
+      - name: Enforce Honesty & RTL Discipline
+        run: npm run check-honesty
+
+      - name: Typecheck
+        run: npx tsc -b
+
+      - name: Run Unit Tests
+        run: npm run test
+
+      - name: Build Production Bundle
+        run: npm run build
