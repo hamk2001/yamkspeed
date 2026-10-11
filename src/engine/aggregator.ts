@@ -1,4 +1,4 @@
-import { bytesToMbps, trimmedMean, percentile, coefficientOfVariation } from './math';
+import { bytesToMbps, trimmedMean, coefficientOfVariation } from './math';
 import type { SpeedSample } from './types';
 
 export interface BucketSample {
@@ -6,44 +6,86 @@ export interface BucketSample {
   bytes: number;
 }
 
+/**
+ * SlidingWindowAggregator:
+ * Computes live rates and final sustained throughput with zero double-counting
+ * and rigorous post-warmup statistical analysis.
+ */
 export class SlidingWindowAggregator {
-  private bucketDurationMs: number;
+  private sliceDurationMs: number;
   private warmupDurationMs: number;
   private startTime: number = 0;
   private totalBytes: number = 0;
-  private buckets: BucketSample[] = [];
-  private postWarmupMbps: number[] = [];
+  private warmupBytes: number = 0;
+  private warmupEnded: boolean = false;
+  private warmupEndTime: number = 0;
   private phase: 'download' | 'upload';
+
+  // Contiguous non-overlapping post-warmup time slices
+  private currentSliceBytes: number = 0;
+  private currentSliceStart: number = 0;
+  private postWarmupSlices: number[] = [];
+
+  // Live sampling with EMA smoothing
+  private liveRateMbps: number = 0;
+  private lastLiveTime: number = 0;
+  private lastLiveBytes: number = 0;
 
   constructor(
     phase: 'download' | 'upload',
-    bucketDurationMs = 250,
+    sliceDurationMs = 500,
     warmupDurationMs = 2000
   ) {
     this.phase = phase;
-    this.bucketDurationMs = bucketDurationMs;
+    this.sliceDurationMs = sliceDurationMs;
     this.warmupDurationMs = warmupDurationMs;
   }
 
   start(now = performance.now()): void {
     this.startTime = now;
     this.totalBytes = 0;
-    this.buckets = [];
-    this.postWarmupMbps = [];
+    this.warmupBytes = 0;
+    this.warmupEnded = this.warmupDurationMs <= 0;
+    this.warmupEndTime = now;
+    this.currentSliceBytes = 0;
+    this.currentSliceStart = now;
+    this.postWarmupSlices = [];
+    this.liveRateMbps = 0;
+    this.lastLiveTime = now;
+    this.lastLiveBytes = 0;
   }
 
   /**
    * Records newly received or sent bytes chunk with high-precision timestamp.
+   * Every byte is strictly counted once in its exact time slice.
    */
   recordBytes(bytes: number, now = performance.now()): void {
     if (bytes <= 0) return;
     this.totalBytes += bytes;
 
-    const currentBucket = this.buckets[this.buckets.length - 1];
-    if (currentBucket && now - currentBucket.timestamp < this.bucketDurationMs) {
-      currentBucket.bytes += bytes;
-    } else {
-      this.buckets.push({ timestamp: now, bytes });
+    // Transition from warmup to active measurement
+    if (!this.warmupEnded) {
+      if (now - this.startTime >= this.warmupDurationMs) {
+        this.warmupEnded = true;
+        this.warmupEndTime = now;
+        this.warmupBytes = this.totalBytes;
+        this.currentSliceStart = now;
+        this.currentSliceBytes = 0;
+      }
+      return;
+    }
+
+    this.currentSliceBytes += bytes;
+
+    // When current contiguous slice window closes, record its throughput
+    if (now - this.currentSliceStart >= this.sliceDurationMs) {
+      const durationS = (now - this.currentSliceStart) / 1000;
+      if (durationS > 0) {
+        const sliceMbps = bytesToMbps(this.currentSliceBytes, durationS * 1000);
+        this.postWarmupSlices.push(sliceMbps);
+      }
+      this.currentSliceStart = now;
+      this.currentSliceBytes = 0;
     }
   }
 
@@ -54,62 +96,75 @@ export class SlidingWindowAggregator {
     const elapsed = now - this.startTime;
     const isWarmup = elapsed < this.warmupDurationMs;
 
-    // Calculate instantaneous speed from recent buckets (last 500ms)
-    const recentWindowMs = 500;
-    const recentBuckets = this.buckets.filter((b) => now - b.timestamp < recentWindowMs);
-    const recentBytes = recentBuckets.reduce((sum, b) => sum + b.bytes, 0);
-    const effectiveWindow = Math.min(elapsed, recentWindowMs);
-    const instantaneousMbps = bytesToMbps(recentBytes, effectiveWindow);
+    const dtSeconds = (now - this.lastLiveTime) / 1000;
+    const dbBytes = this.totalBytes - this.lastLiveBytes;
 
-    // Cumulative post-warmup speed
-    const cumulativeMbps = bytesToMbps(this.totalBytes, elapsed);
-
-    if (!isWarmup && instantaneousMbps > 0) {
-      this.postWarmupMbps.push(instantaneousMbps);
+    if (dtSeconds >= 0.15) {
+      const instMbps = bytesToMbps(dbBytes, dtSeconds * 1000);
+      if (this.liveRateMbps === 0) {
+        this.liveRateMbps = instMbps;
+      } else {
+        // Exponential Moving Average (EMA) with alpha=0.55 for smooth, responsive gauge
+        this.liveRateMbps = 0.55 * instMbps + 0.45 * this.liveRateMbps;
+      }
+      this.lastLiveTime = now;
+      this.lastLiveBytes = this.totalBytes;
     }
 
     return {
       t: now,
-      mbps: instantaneousMbps || cumulativeMbps,
+      mbps: Math.max(0, this.liveRateMbps),
       phase: this.phase,
       warmup: isWarmup,
       bytesTransferred: this.totalBytes,
-      instantaneousMbps,
+      instantaneousMbps: this.liveRateMbps,
     };
   }
 
   /**
    * Calculates final post-warm-up trimmed speed result and stability.
    */
-  getFinalResult(): {
+  getFinalResult(now = performance.now()): {
     mbps: number;
     totalBytes: number;
     quality: 'stable' | 'unstable';
   } {
-    if (this.postWarmupMbps.length === 0) {
-      // If duration was short, use all recorded buckets
-      const totalElapsed =
-        this.buckets.length > 0
-          ? this.buckets[this.buckets.length - 1]!.timestamp - this.startTime
-          : 0;
-      return {
-        mbps: bytesToMbps(this.totalBytes, totalElapsed || 1),
-        totalBytes: this.totalBytes,
-        quality: 'unstable',
-      };
+    const postWarmupDurationMs = this.warmupEnded
+      ? Math.max(1, now - this.warmupEndTime)
+      : Math.max(1, now - this.startTime);
+
+    const postWarmupBytes = this.warmupEnded
+      ? Math.max(0, this.totalBytes - this.warmupBytes)
+      : this.totalBytes;
+
+    // Flush any pending slice
+    if (this.warmupEnded && this.currentSliceBytes > 0) {
+      const sliceDurationS = (now - this.currentSliceStart) / 1000;
+      if (sliceDurationS > 0.1) {
+        const sliceMbps = bytesToMbps(this.currentSliceBytes, sliceDurationS * 1000);
+        this.postWarmupSlices.push(sliceMbps);
+      }
     }
 
-    // 90th percentile of post-warmup throughput or trimmed mean
-    const trimmed = trimmedMean(this.postWarmupMbps, 0.1);
-    const p90 = percentile(this.postWarmupMbps, 90);
-    // Conservative honest estimate: average between trimmed mean and 90th percentile
-    const finalMbps = (trimmed + p90) / 2;
+    // Exact sustained wire speed over the entire post-warmup period
+    const sustainedMbps = bytesToMbps(postWarmupBytes, postWarmupDurationMs);
 
-    const cv = coefficientOfVariation(this.postWarmupMbps);
+    let finalMbps = sustainedMbps;
+
+    // If we have enough contiguous slices, blend with trimmed mean to filter brief network hiccups
+    if (this.postWarmupSlices.length >= 4) {
+      const trimmed = trimmedMean(this.postWarmupSlices, 0.1);
+      finalMbps = sustainedMbps * 0.75 + trimmed * 0.25;
+    }
+
+    const cv =
+      this.postWarmupSlices.length >= 2
+        ? coefficientOfVariation(this.postWarmupSlices)
+        : 0;
     const quality: 'stable' | 'unstable' = cv <= 0.35 ? 'stable' : 'unstable';
 
     return {
-      mbps: finalMbps,
+      mbps: Math.max(0, finalMbps),
       totalBytes: this.totalBytes,
       quality,
     };

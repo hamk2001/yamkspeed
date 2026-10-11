@@ -19,41 +19,48 @@ export interface UploadResult {
 }
 
 // Pre-allocate a 2MB binary payload once using crypto API
-let cachedPayload: Uint8Array | null = null;
-function getPayload(size: number): Uint8Array {
+let cachedBlob: Blob | null = null;
+function getPayload(size: number): Blob {
   const maxCached = 2 * 1024 * 1024;
-  if (!cachedPayload) {
-    cachedPayload = new Uint8Array(maxCached);
+  if (!cachedBlob) {
+    const raw = new Uint8Array(maxCached);
     // Fill with random noise once to avoid compression by middleboxes
     if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-      crypto.getRandomValues(cachedPayload.subarray(0, 65536)); // Seed first 64KB
+      crypto.getRandomValues(raw.subarray(0, 65536)); // Seed first 64KB
       for (let i = 65536; i < maxCached; i += 65536) {
-        cachedPayload.set(cachedPayload.subarray(0, Math.min(65536, maxCached - i)), i);
+        raw.set(raw.subarray(0, Math.min(65536, maxCached - i)), i);
       }
     }
+    cachedBlob = new Blob([raw], { type: 'application/octet-stream' });
   }
-  return cachedPayload.subarray(0, Math.min(size, maxCached));
+  return cachedBlob.slice(0, Math.min(size, maxCached));
 }
 
+/**
+ * measureUpload:
+ * Measures true, server-confirmed upload throughput.
+ * Uses adaptive chunk sizes and calculates speed from server HTTP 200 acknowledgements,
+ * preventing local OS socket buffer inflation (Study 03 §3 #9).
+ */
 export async function measureUpload(
   options: UploadOptions = {}
 ): Promise<UploadResult> {
   const {
     endpoint = 'https://speed.cloudflare.com/__up',
     durationMs = 9000,
-    maxBytes = 35 * 1024 * 1024,
-    concurrency = 4,
+    maxBytes = 25 * 1024 * 1024,
+    concurrency = 2,
     signal,
     onSample,
   } = options;
 
-  const aggregator = new SlidingWindowAggregator('upload', 250, 2000);
+  const aggregator = new SlidingWindowAggregator('upload', 500, 2000);
   const startTime = performance.now();
   aggregator.start(startTime);
 
-  let bytesUploaded = 0;
+  let bytesConfirmed = 0;
   let isFinished = false;
-  const activeXhrs: XMLHttpRequest[] = [];
+  const activeControllers: AbortController[] = [];
 
   const sampleInterval = setInterval(() => {
     if (onSample) {
@@ -61,89 +68,74 @@ export async function measureUpload(
     }
   }, 200);
 
-  const payloadSizes = [
-    128 * 1024,
-    256 * 1024,
-    512 * 1024,
-    1024 * 1024,
-    2 * 1024 * 1024,
-  ];
-
-  function sendXhrChunk(size: number): Promise<number> {
-    return new Promise((resolve, reject) => {
-      if (isFinished || signal?.aborted) {
-        return reject(new DOMException('Upload aborted', 'AbortError'));
-      }
-
-      const xhr = new XMLHttpRequest();
-      activeXhrs.push(xhr);
-      const data = getPayload(size);
-
-      let lastLoaded = 0;
-
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const delta = event.loaded - lastLoaded;
-          if (delta > 0) {
-            lastLoaded = event.loaded;
-            bytesUploaded += delta;
-            aggregator.recordBytes(delta, performance.now());
-
-            if (bytesUploaded >= maxBytes || performance.now() - startTime >= durationMs) {
-              isFinished = true;
-              xhr.abort();
-            }
-          }
-        }
-      };
-
-      xhr.onload = () => {
-        const idx = activeXhrs.indexOf(xhr);
-        if (idx !== -1) activeXhrs.splice(idx, 1);
-        resolve(lastLoaded || size);
-      };
-
-      xhr.onerror = (e) => {
-        const idx = activeXhrs.indexOf(xhr);
-        if (idx !== -1) activeXhrs.splice(idx, 1);
-        reject(e);
-      };
-
-      xhr.onabort = () => {
-        const idx = activeXhrs.indexOf(xhr);
-        if (idx !== -1) activeXhrs.splice(idx, 1);
-        resolve(lastLoaded);
-      };
-
-      xhr.open('POST', endpoint, true);
-      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-      xhr.setRequestHeader('Cache-Control', 'no-store');
-
-      try {
-        xhr.send(data as unknown as XMLHttpRequestBodyInit);
-      } catch (err) {
-        reject(err);
-      }
-    });
-  }
+  // Initial chunk size 128KB, adapts based on measured link speed
+  let currentChunkSize = 128 * 1024;
 
   async function workerStream(): Promise<void> {
-    let sizeIndex = 0;
-
     while (!isFinished && !signal?.aborted) {
-      if (performance.now() - startTime >= durationMs || bytesUploaded >= maxBytes) {
+      const now = performance.now();
+      if (now - startTime >= durationMs || bytesConfirmed >= maxBytes) {
         break;
       }
 
-      const chunkSize = payloadSizes[Math.min(sizeIndex, payloadSizes.length - 1)]!;
-      sizeIndex++;
+      const chunkSize = currentChunkSize;
+      const payload = getPayload(chunkSize);
+
+      const controller = new AbortController();
+      activeControllers.push(controller);
+
+      const abortHandler = () => controller.abort();
+      if (signal) {
+        signal.addEventListener('abort', abortHandler, { once: true });
+      }
+
+      const reqStart = performance.now();
 
       try {
-        await sendXhrChunk(chunkSize);
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Cache-Control': 'no-store, no-cache',
+          },
+          body: payload,
+          signal: controller.signal,
+        });
+
+        const reqEnd = performance.now();
+
+        if (response.ok) {
+          // Server confirmed reception of the full payload!
+          const headerBytes = response.headers.get('cf-meta-upload-bytes');
+          const confirmedChunkBytes = headerBytes ? parseInt(headerBytes, 10) : chunkSize;
+
+          bytesConfirmed += confirmedChunkBytes;
+          aggregator.recordBytes(confirmedChunkBytes, reqEnd);
+
+          // Adapt next chunk size so requests complete in ~350-500ms
+          const reqDurationS = (reqEnd - reqStart) / 1000;
+          if (reqDurationS > 0) {
+            const measuredChunkMbps = (confirmedChunkBytes * 8) / (reqDurationS * 1_000_000);
+            const targetBytes = Math.round((measuredChunkMbps * 1_000_000 / 8) * 0.4);
+            // Clamp between 64KB and 2MB
+            currentChunkSize = Math.max(64 * 1024, Math.min(2 * 1024 * 1024, targetBytes));
+          }
+
+          if (bytesConfirmed >= maxBytes || performance.now() - startTime >= durationMs) {
+            isFinished = true;
+            break;
+          }
+        }
       } catch {
         if (signal?.aborted) break;
-        // Minor chunk error, break stream
-        break;
+        // Minor network glitch on this chunk, retry with smaller chunk
+        currentChunkSize = Math.max(64 * 1024, Math.floor(currentChunkSize / 2));
+      } finally {
+        if (signal) {
+          signal.removeEventListener('abort', abortHandler);
+        }
+        const idx = activeControllers.indexOf(controller);
+        if (idx !== -1) activeControllers.splice(idx, 1);
       }
     }
   }
@@ -154,9 +146,9 @@ export async function measureUpload(
   } finally {
     isFinished = true;
     clearInterval(sampleInterval);
-    activeXhrs.forEach((xhr) => {
+    activeControllers.forEach((c) => {
       try {
-        xhr.abort();
+        c.abort();
       } catch {
         // ignore
       }
@@ -167,12 +159,12 @@ export async function measureUpload(
     throw new DOMException('Upload aborted', 'AbortError');
   }
 
-  const final = aggregator.getFinalResult();
+  const final = aggregator.getFinalResult(performance.now());
   const actualDurationMs = performance.now() - startTime;
 
   return {
     mbps: final.mbps,
-    totalBytes: final.totalBytes,
+    totalBytes: bytesConfirmed,
     quality: final.quality,
     streamsUsed: concurrency,
     durationMs: actualDurationMs,

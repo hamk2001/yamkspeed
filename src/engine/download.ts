@@ -30,7 +30,7 @@ export async function measureDownload(
     onSample,
   } = options;
 
-  const aggregator = new SlidingWindowAggregator('download', 250, 2000);
+  const aggregator = new SlidingWindowAggregator('download', 500, 2000);
   const startTime = performance.now();
   aggregator.start(startTime);
 
@@ -144,7 +144,7 @@ export async function measureDownload(
     throw new DOMException('Download aborted', 'AbortError');
   }
 
-  const final = aggregator.getFinalResult();
+  const final = aggregator.getFinalResult(performance.now());
   const actualDurationMs = performance.now() - startTime;
 
   return {
