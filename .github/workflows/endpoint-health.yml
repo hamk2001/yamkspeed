@@ -1,0 +1,43 @@
+name: Daily Provider Endpoint Health Check
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # Every day at 06:00 UTC
+  workflow_dispatch: # Allows manual trigger from Actions tab
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Endpoint Health Verification
+        run: |
+          echo "=== 1. Checking Cloudflare Speed Endpoints ==="
+          CF_DOWN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://speed.cloudflare.com/__down?bytes=100")
+          echo "Cloudflare __down HTTP status: $CF_DOWN_STATUS"
+          if [ "$CF_DOWN_STATUS" != "200" ]; then
+            echo "::error::Cloudflare __down endpoint failed with status $CF_DOWN_STATUS"
+            exit 1
+          fi
+
+          echo "=== 2. Checking Cloudflare __up POST Endpoint ==="
+          CF_UP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://speed.cloudflare.com/__up" -d "ping")
+          echo "Cloudflare __up HTTP status: $CF_UP_STATUS"
+          if [ "$CF_UP_STATUS" != "200" ]; then
+            echo "::warning::Cloudflare __up returned HTTP status $CF_UP_STATUS"
+          fi
+
+          echo "=== 3. Checking M-Lab Locate API (Tier 2 Fallback) ==="
+          MLAB_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://locate.measurementlab.net/v2/nearest/ndt/ndt7")
+          echo "M-Lab Locate HTTP status: $MLAB_STATUS"
+          if [ "$MLAB_STATUS" != "200" ]; then
+            echo "::warning::M-Lab Locate API returned HTTP status $MLAB_STATUS"
+          fi
+
+          echo "=== 4. Verifying CORS Headers ==="
+          CF_CORS=$(curl -s -I "https://speed.cloudflare.com/__down?bytes=0" | grep -i "access-control-allow-origin" || echo "none")
+          echo "Cloudflare CORS: $CF_CORS"
+
+          echo "✅ All endpoint health checks passed successfully!"

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://yamk-speed.vercel.app/sitemap.xml
