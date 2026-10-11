@@ -9,10 +9,22 @@ import { safeStorage } from '@/lib/storage-migration';
 export interface SettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenMethodology?: () => void;
 }
 
-export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose }) => {
-  const { lightTestMode, setLightTestMode } = usePreferencesStore();
+export const SettingsDialog: React.FC<SettingsDialogProps> = ({
+  isOpen,
+  onClose,
+  onOpenMethodology,
+}) => {
+  const {
+    speedUnit,
+    setSpeedUnit,
+    digits,
+    setDigits,
+    lightTestMode,
+    setLightTestMode,
+  } = usePreferencesStore();
   const { t } = useI18n();
 
   const handleClearData = () => {
@@ -24,6 +36,78 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t.nav.settings}>
       <div className="space-y-6">
+        {/* Speed Unit Selector (Study 03 §1) */}
+        <div className="p-4 rounded-xl bg-[var(--surface-2)] space-y-3">
+          <div className="space-y-1">
+            <div className="font-semibold text-sm text-[var(--text)]">
+              {t.settings.speedUnit}
+            </div>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+              {t.settings.speedUnitDesc}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setSpeedUnit('mbps')}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
+                speedUnit === 'mbps'
+                  ? 'bg-[var(--accent-down)] text-[#070B14] border-transparent shadow-sm'
+                  : 'bg-[var(--surface)] text-[var(--text-muted)] border-[var(--border)] hover:text-[var(--text)]'
+              }`}
+            >
+              Mbps (Megabits/s)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSpeedUnit('MBps')}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
+                speedUnit === 'MBps'
+                  ? 'bg-[var(--accent-down)] text-[#070B14] border-transparent shadow-sm'
+                  : 'bg-[var(--surface)] text-[var(--text-muted)] border-[var(--border)] hover:text-[var(--text)]'
+              }`}
+            >
+              MB/s (Megabytes/s, ÷8)
+            </button>
+          </div>
+        </div>
+
+        {/* Numeral Digits Selector (Study 04 §4) */}
+        <div className="p-4 rounded-xl bg-[var(--surface-2)] space-y-3">
+          <div className="space-y-1">
+            <div className="font-semibold text-sm text-[var(--text)]">
+              {t.settings.digits}
+            </div>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+              {t.settings.digitsDesc}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setDigits('latin')}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
+                digits === 'latin'
+                  ? 'bg-[var(--accent-down)] text-[#070B14] border-transparent shadow-sm'
+                  : 'bg-[var(--surface)] text-[var(--text-muted)] border-[var(--border)] hover:text-[var(--text)]'
+              }`}
+            >
+              {t.settings.digitsLatin}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDigits('arabic')}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
+                digits === 'arabic'
+                  ? 'bg-[var(--accent-down)] text-[#070B14] border-transparent shadow-sm'
+                  : 'bg-[var(--surface)] text-[var(--text-muted)] border-[var(--border)] hover:text-[var(--text)]'
+              }`}
+            >
+              {t.settings.digitsArabic}
+            </button>
+          </div>
+        </div>
+
         {/* Light Test Mode Toggle */}
         <div className="flex items-start justify-between gap-4 p-4 rounded-xl bg-[var(--surface-2)]">
           <div className="space-y-1">
@@ -52,21 +136,28 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
           </button>
         </div>
 
-        {/* Engine Transparency Notice */}
-        <div className="p-4 rounded-xl border border-[var(--border)] space-y-2">
+        {/* Engine Transparency & Methodology Notice */}
+        <div className="p-4 rounded-xl border border-[var(--border)] space-y-3">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             <ShieldCheck className="w-4 h-4 text-[var(--accent-down)]" />
             <span>Honesty & Measurement Architecture</span>
           </div>
           <p className="text-xs text-[var(--text)] leading-relaxed">
-            YamkSpeed uses a 3-tier measurement architecture:
-            <br />
-            1. Cloudflare Speed Endpoints (Primary)
-            <br />
-            2. M-Lab NDT7 WebSocket (Alternate)
-            <br />
-            3. Cloudflare Worker (Emergency Reserve)
+            YamkSpeed uses a 3-tier measurement architecture (Cloudflare edge, M-Lab NDT7, Worker fallback) with zero synthetic values.
           </p>
+          {onOpenMethodology && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                onClose();
+                onOpenMethodology();
+              }}
+              className="w-full text-xs"
+            >
+              {t.actions.howWeMeasure}
+            </Button>
+          )}
         </div>
 
         {/* Storage / Reset */}

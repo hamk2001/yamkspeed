@@ -4,13 +4,20 @@ import { safeStorage } from '@/lib/storage-migration';
 export type Theme = 'dark' | 'light';
 export type Language = 'ar' | 'en';
 
+export type SpeedUnit = 'mbps' | 'MBps';
+export type DigitFormat = 'latin' | 'arabic';
+
 export interface PreferencesState {
   theme: Theme;
   lang: Language;
+  speedUnit: SpeedUnit;
+  digits: DigitFormat;
   lightTestMode: boolean;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   setLang: (lang: Language) => void;
+  setSpeedUnit: (unit: SpeedUnit) => void;
+  setDigits: (digits: DigitFormat) => void;
   setLightTestMode: (enabled: boolean) => void;
 }
 
@@ -29,10 +36,18 @@ function applyDocumentAttributes(theme: Theme, lang: Language) {
   }
 }
 
-function loadInitialPreferences(): { theme: Theme; lang: Language; lightTestMode: boolean } {
+function loadInitialPreferences(): {
+  theme: Theme;
+  lang: Language;
+  speedUnit: SpeedUnit;
+  digits: DigitFormat;
+  lightTestMode: boolean;
+} {
   const fallback = {
     theme: 'dark' as Theme,
     lang: 'ar' as Language,
+    speedUnit: 'mbps' as SpeedUnit,
+    digits: 'latin' as DigitFormat,
     lightTestMode: false,
   };
 
@@ -43,8 +58,10 @@ function loadInitialPreferences(): { theme: Theme; lang: Language; lightTestMode
       if (parsed && typeof parsed === 'object') {
         const theme = parsed.theme === 'light' ? 'light' : 'dark';
         const lang = parsed.lang === 'en' ? 'en' : 'ar';
+        const speedUnit = parsed.speedUnit === 'MBps' ? 'MBps' : 'mbps';
+        const digits = parsed.digits === 'arabic' ? 'arabic' : 'latin';
         const lightTestMode = Boolean(parsed.lightTestMode);
-        return { theme, lang, lightTestMode };
+        return { theme, lang, speedUnit, digits, lightTestMode };
       }
     }
   } catch {
@@ -68,7 +85,13 @@ const initial = loadInitialPreferences();
 applyDocumentAttributes(initial.theme, initial.lang);
 
 export const usePreferencesStore = create<PreferencesState>((set, get) => {
-  const save = (state: { theme: Theme; lang: Language; lightTestMode: boolean }) => {
+  const save = (state: {
+    theme: Theme;
+    lang: Language;
+    speedUnit: SpeedUnit;
+    digits: DigitFormat;
+    lightTestMode: boolean;
+  }) => {
     safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     applyDocumentAttributes(state.theme, state.lang);
   };
@@ -76,6 +99,8 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
   return {
     theme: initial.theme,
     lang: initial.lang,
+    speedUnit: initial.speedUnit,
+    digits: initial.digits,
     lightTestMode: initial.lightTestMode,
 
     setTheme: (theme: Theme) => {
@@ -109,6 +134,22 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
         const next = { ...s, lang };
         save(next);
         return { lang };
+      });
+    },
+
+    setSpeedUnit: (speedUnit: SpeedUnit) => {
+      set((s) => {
+        const next = { ...s, speedUnit };
+        save(next);
+        return { speedUnit };
+      });
+    },
+
+    setDigits: (digits: DigitFormat) => {
+      set((s) => {
+        const next = { ...s, digits };
+        save(next);
+        return { digits };
       });
     },
 

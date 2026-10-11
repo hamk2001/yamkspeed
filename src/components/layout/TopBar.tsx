@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Moon, Sun, Globe, Settings as SettingsIcon } from 'lucide-react';
+import { Activity, Moon, Sun, Globe, Settings as SettingsIcon, Terminal, ShieldCheck } from 'lucide-react';
 import { usePreferencesStore } from '@/stores/preferences';
 import { useI18n } from '@/i18n';
 import { IconButton } from '@/components/ui/IconButton';
@@ -7,19 +7,24 @@ import { Tooltip } from '@/components/ui/Tooltip';
 
 export interface TopBarProps {
   onOpenSettings?: () => void;
+  onOpenMethodology?: () => void;
   isAuditView?: boolean;
   onToggleAudit?: () => void;
+  isHarnessView?: boolean;
+  onToggleHarness?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
   onOpenSettings,
+  onOpenMethodology,
   isAuditView = false,
   onToggleAudit,
+  isHarnessView = false,
+  onToggleHarness,
 }) => {
   const { theme, toggleTheme } = usePreferencesStore();
   const { t, lang, toggleLanguage } = useI18n();
 
-  // Target language label in its own native script
   const targetLanguageLabel = lang === 'ar' ? 'English' : 'العربية';
 
   return (
@@ -45,6 +50,23 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Dev Harness Toggle */}
+          {onToggleHarness && (
+            <Tooltip content="Engine Dev Harness">
+              <button
+                onClick={onToggleHarness}
+                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
+                  isHarnessView
+                    ? 'bg-[var(--accent-lat)] text-[#070B14] border-transparent font-medium'
+                    : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                <Terminal className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Harness</span>
+              </button>
+            </Tooltip>
+          )}
+
           {/* RTL Audit View Toggle */}
           {onToggleAudit && (
             <button
@@ -86,6 +108,20 @@ export const TopBar: React.FC<TopBarProps> = ({
               )}
             </IconButton>
           </Tooltip>
+
+          {/* Methodology Modal Toggle */}
+          {onOpenMethodology && (
+            <Tooltip content={t.nav.methodology}>
+              <IconButton
+                size="sm"
+                variant="outline"
+                aria-label={t.nav.methodology}
+                onClick={onOpenMethodology}
+              >
+                <ShieldCheck className="w-4 h-4 text-[var(--accent-down)]" />
+              </IconButton>
+            </Tooltip>
+          )}
 
           {/* Settings Modal Toggle */}
           {onOpenSettings && (

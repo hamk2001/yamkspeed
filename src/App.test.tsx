@@ -19,13 +19,11 @@ describe('App Smoke & Integration Test', () => {
   it('toggles language reactively when language button is clicked', () => {
     render(<App />);
 
-    // Initial state: Arabic by default in test env or system
     const langBtn = screen.getByRole('button', { name: /Switch language to/i });
     expect(langBtn).toBeInTheDocument();
 
     fireEvent.click(langBtn);
 
-    // After clicking, document attributes update
     expect(document.documentElement.getAttribute('lang')).toBeDefined();
     expect(document.documentElement.getAttribute('dir')).toBeDefined();
   });
@@ -49,5 +47,26 @@ describe('App Smoke & Integration Test', () => {
     fireEvent.click(auditBtn);
 
     expect(screen.getByText(/RTL & BiDi Isolation Audit Page/i)).toBeInTheDocument();
+  });
+
+  it('switches to Engine Dev Harness view when Harness button is clicked', () => {
+    render(<App />);
+
+    const harnessBtn = screen.getByRole('button', { name: /Harness/i });
+    fireEvent.click(harnessBtn);
+
+    expect(screen.getByText(/Engine Dev Harness/i)).toBeInTheDocument();
+  });
+
+  it('opens and closes the How We Measure methodology dialog', () => {
+    render(<App />);
+
+    const methodologyBtns = screen.getAllByRole('button', { name: /How We Measure|كيف نقيس السرعة/i });
+    expect(methodologyBtns.length).toBeGreaterThan(0);
+    fireEvent.click(methodologyBtns[0]);
+
+    expect(
+      screen.getByText(/Measurement Methodology & Honesty|منهجية القياس ودقة الأرقام/i)
+    ).toBeInTheDocument();
   });
 });
